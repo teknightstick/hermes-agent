@@ -150,8 +150,46 @@ class TestGatewayFailureNotice:
         )
         assert captured == []
 
-    def test_adapter_can_project_failure_notice_itself(self, monkeypatch):
-        adapter = SimpleNamespace(suppress_native_subagent_failure_notice=True)
+    def test_adapter_can_replace_failure_notice_with_compact_text(self, monkeypatch):
+        adapter = SimpleNamespace(
+            native_subagent_failure_notice="helper → Brok · stopped; review needed"
+        )
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=adapter
+        )
+
+        runner.progress_callback(
+            "subagent.complete",
+            preview="ERROR_SENTINEL",
+            status="failed",
+            goal="GOAL_SENTINEL",
+            summary="SUMMARY_SENTINEL",
+        )
+
+        assert captured == ["helper → Brok · stopped; review needed"]
+
+    def test_adapter_can_build_failure_notice_from_event(self, monkeypatch):
+        class Adapter:
+            def native_subagent_failure_notice(self, **event):
+                assert event["status"] == "timeout"
+                assert event["preview"] == "timeout preview"
+                return "bounded helper stopped"
+
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=Adapter()
+        )
+
+        runner.progress_callback(
+            "subagent.complete", preview="timeout preview", status="timeout", goal="g"
+        )
+
+        assert captured == ["bounded helper stopped"]
+
+    @pytest.mark.parametrize("custom_notice", [None, "", "   ", 42])
+    def test_invalid_custom_notice_falls_back_to_native_failure_notice(
+        self, monkeypatch, custom_notice
+    ):
+        adapter = SimpleNamespace(native_subagent_failure_notice=custom_notice)
         runner, captured = _make_runner_and_captured(
             monkeypatch, delivery_adapter=adapter
         )
@@ -160,7 +198,24 @@ class TestGatewayFailureNotice:
             "subagent.complete", preview="boom", status="failed", goal="g"
         )
 
-        assert captured == []
+        assert len(captured) == 1
+        assert "Subagent" in captured[0]
+
+    def test_custom_notice_error_falls_back_to_native_failure_notice(self, monkeypatch):
+        def broken_notice(**_event):
+            raise RuntimeError("adapter notice failed")
+
+        adapter = SimpleNamespace(native_subagent_failure_notice=broken_notice)
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=adapter
+        )
+
+        runner.progress_callback(
+            "subagent.complete", preview="boom", status="failed", goal="g"
+        )
+
+        assert len(captured) == 1
+        assert "Subagent" in captured[0]
 
     def test_unopted_adapter_keeps_native_failure_notice(self, monkeypatch):
         runner, captured = _make_runner_and_captured(
@@ -173,7 +228,7 @@ class TestGatewayFailureNotice:
 
         assert len(captured) == 1
 
-    def test_mock_adapter_does_not_accidentally_opt_in(self, monkeypatch):
+    def test_mock_adapter_does_not_accidentally_replace_notice(self, monkeypatch):
         runner, captured = _make_runner_and_captured(
             monkeypatch, delivery_adapter=MagicMock()
         )
@@ -183,6 +238,7 @@ class TestGatewayFailureNotice:
         )
 
         assert len(captured) == 1
+        assert "Subagent" in captured[0]
 
     def test_fires_without_progress_queue(self, monkeypatch):
         """The notice must not depend on tool_progress being enabled —

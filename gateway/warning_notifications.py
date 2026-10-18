@@ -1,6 +1,11 @@
 """Delivery policy for engine diagnostics, never assistant or command responses."""
 
+import logging
+
 from gateway.display_config import resolve_display_setting
+
+
+logger = logging.getLogger(__name__)
 
 
 class DiagnosticText(str):
@@ -60,6 +65,20 @@ def diagnostic_wake_muted(event, user_config=None) -> bool:
         return snapshot
     return bool(getattr(event, "internal", False)) and diagnostic_turn_muted(
         getattr(event, "metadata", None), event.source.platform, user_config)
+
+
+def resolve_subagent_failure_notice(runner, source, preview, event: dict, default: str) -> str:
+    """Return an adapter's valid compact replacement, or the native failure notice."""
+    try:
+        adapter = runner._delivery_adapter_for(source)
+        custom_notice = getattr(adapter, "native_subagent_failure_notice", None)
+        if callable(custom_notice):
+            custom_notice = custom_notice(preview=preview, **event)
+        if isinstance(custom_notice, str) and custom_notice.strip():
+            return custom_notice.strip()
+    except Exception:
+        logger.debug("adapter subagent failure notice failed; using native notice", exc_info=True)
+    return default
 
 
 def render_notification(render, *, platform, diagnostic=True, user_config=None) -> bool:

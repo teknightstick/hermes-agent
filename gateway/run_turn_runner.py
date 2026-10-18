@@ -127,8 +127,7 @@ class TurnRunner:
     def progress_callback(self, event_type: str, tool_name: str | None = None, preview: str | None = None, args: dict | None = None, **kwargs):
         """Callback invoked by agent on tool lifecycle events."""
         ctx = self._ctx
-        # Failed subagent → one clean user-facing notice, handled FIRST, before every progress-queue
-        # gate: platforms with tool_progress off must still hear about a dead delegation.
+        # Failed subagent → one clean notice before every progress gate, even with tool progress off.
         if event_type == "subagent.complete":
             self._progress_subagent_notice(preview, kwargs)
             return
@@ -182,18 +181,16 @@ class TurnRunner:
     def _progress_subagent_notice(self, preview, kwargs: dict) -> None:
         """Only terminal failure statuses render (same notice rail as credit warnings)."""
         ctx = self._ctx
-        from gateway.warning_notifications import render_notification
+        from gateway.warning_notifications import render_notification, resolve_subagent_failure_notice
         status = kwargs.get("status")
         try:
             from tools.delegate_tool import SUBAGENT_FAILURE_STATUSES, format_subagent_failure_line
             if status in SUBAGENT_FAILURE_STATUSES and ctx._run_still_current():
-                adapter = self._runner._delivery_adapter_for(ctx.source)
-                if getattr(adapter, "suppress_native_subagent_failure_notice", False) is True:
-                    return
                 line = format_subagent_failure_line(
                     kwargs.get("goal"), status, error=kwargs.get("summary") or preview,
                     duration_seconds=kwargs.get("duration_seconds"), failure_reason=kwargs.get("failure_reason"),
                 )
+                line = resolve_subagent_failure_notice(self._runner, ctx.source, preview, kwargs, line)
                 render_notification(
                     lambda: self._schedule(self._runner._deliver_platform_notice(ctx.source, line), "subagent failure notice scheduling error"),
                     platform=ctx.source.platform, user_config=ctx.user_config)

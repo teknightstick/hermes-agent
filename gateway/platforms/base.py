@@ -1930,13 +1930,10 @@ class BasePlatformAdapter(ABC):
         else:
             store.pop(str(chat_id), None)
 
-    # Can wake a fresh turn AFTER a turn ends (detached-subagent completions); False for stateless
-    # adapters (API server). Propagated to ``HERMES_SESSION_ASYNC_DELIVERY`` so tools never promise
-    # a delivery they can't keep.
+    # Detached completions can wake a fresh turn; stateless adapters opt out.
     supports_async_delivery: bool = True
-    # Adapter already projects terminal subagent events in its own UI. This suppresses only the
-    # gateway's native failure notice; the parent turn and every other notice remain unchanged.
-    suppress_native_subagent_failure_notice: bool = False
+    # Optional compact subagent-failure text/callback; invalid values fail safe to the native notice.
+    native_subagent_failure_notice: str | Callable[..., str | None] | None = None
     # ``send()`` chunks natively via ``truncate_message()`` -> the router skips its truncation.
     splits_long_messages: bool = False
     # Prefix users can always TYPE for Hermes commands ("!" where the client eats a leading "/").
