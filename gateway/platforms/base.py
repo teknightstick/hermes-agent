@@ -1934,6 +1934,9 @@ class BasePlatformAdapter(ABC):
     # adapters (API server). Propagated to ``HERMES_SESSION_ASYNC_DELIVERY`` so tools never promise
     # a delivery they can't keep.
     supports_async_delivery: bool = True
+    # Adapter already projects terminal subagent events in its own UI. This suppresses only the
+    # gateway's native failure notice; the parent turn and every other notice remain unchanged.
+    suppress_native_subagent_failure_notice: bool = False
     # ``send()`` chunks natively via ``truncate_message()`` -> the router skips its truncation.
     splits_long_messages: bool = False
     # Prefix users can always TYPE for Hermes commands ("!" where the client eats a leading "/").

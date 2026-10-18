@@ -13,6 +13,7 @@ did. Now:
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -83,7 +84,7 @@ class TestFormatSubagentFailureLine:
 
 
 
-def _make_runner_and_captured(monkeypatch, run_still_current=True):
+def _make_runner_and_captured(monkeypatch, run_still_current=True, delivery_adapter=None):
     """TurnRunner with a stub gateway runner; captures scheduled notices."""
     from gateway import run as run_mod
 
@@ -91,7 +92,7 @@ def _make_runner_and_captured(monkeypatch, run_still_current=True):
 
     class _StubGatewayRunner:
         def _delivery_adapter_for(self, source):
-            return None
+            return delivery_adapter
 
         async def _deliver_platform_notice(self, source, content):
             captured.append(content)
@@ -148,6 +149,40 @@ class TestGatewayFailureNotice:
             "subagent.complete", preview="boom", status="failed", goal="g"
         )
         assert captured == []
+
+    def test_adapter_can_project_failure_notice_itself(self, monkeypatch):
+        adapter = SimpleNamespace(suppress_native_subagent_failure_notice=True)
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=adapter
+        )
+
+        runner.progress_callback(
+            "subagent.complete", preview="boom", status="failed", goal="g"
+        )
+
+        assert captured == []
+
+    def test_unopted_adapter_keeps_native_failure_notice(self, monkeypatch):
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=SimpleNamespace()
+        )
+
+        runner.progress_callback(
+            "subagent.complete", preview="boom", status="failed", goal="g"
+        )
+
+        assert len(captured) == 1
+
+    def test_mock_adapter_does_not_accidentally_opt_in(self, monkeypatch):
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=MagicMock()
+        )
+
+        runner.progress_callback(
+            "subagent.complete", preview="boom", status="failed", goal="g"
+        )
+
+        assert len(captured) == 1
 
     def test_fires_without_progress_queue(self, monkeypatch):
         """The notice must not depend on tool_progress being enabled —

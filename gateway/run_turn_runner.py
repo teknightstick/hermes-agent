@@ -187,6 +187,9 @@ class TurnRunner:
         try:
             from tools.delegate_tool import SUBAGENT_FAILURE_STATUSES, format_subagent_failure_line
             if status in SUBAGENT_FAILURE_STATUSES and ctx._run_still_current():
+                adapter = self._runner._delivery_adapter_for(ctx.source)
+                if getattr(adapter, "suppress_native_subagent_failure_notice", False) is True:
+                    return
                 line = format_subagent_failure_line(
                     kwargs.get("goal"), status, error=kwargs.get("summary") or preview,
                     duration_seconds=kwargs.get("duration_seconds"), failure_reason=kwargs.get("failure_reason"),
