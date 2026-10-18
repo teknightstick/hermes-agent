@@ -179,7 +179,7 @@ class TurnRunner:
             self._progress_emit(msg)
 
     def _progress_subagent_notice(self, preview, kwargs: dict) -> None:
-        """Only terminal failure statuses render (same notice rail as credit warnings)."""
+        """Render terminal failure outcomes independently of diagnostic-warning visibility."""
         ctx = self._ctx
         from gateway.warning_notifications import render_notification, resolve_subagent_failure_notice
         status = kwargs.get("status")
@@ -193,7 +193,7 @@ class TurnRunner:
                 line = resolve_subagent_failure_notice(self._runner, ctx.source, preview, kwargs, line)
                 render_notification(
                     lambda: self._schedule(self._runner._deliver_platform_notice(ctx.source, line), "subagent failure notice scheduling error"),
-                    platform=ctx.source.platform, user_config=ctx.user_config)
+                    platform=ctx.source.platform, diagnostic=False, user_config=ctx.user_config)
         except Exception:
             logger.debug("subagent failure notice failed", exc_info=True)
 

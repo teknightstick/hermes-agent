@@ -185,6 +185,26 @@ class TestGatewayFailureNotice:
 
         assert captured == ["bounded helper stopped"]
 
+    @pytest.mark.parametrize("status", sorted(SUBAGENT_FAILURE_STATUSES))
+    def test_custom_failure_outcome_ignores_diagnostic_warning_suppression(
+        self, monkeypatch, status
+    ):
+        adapter = SimpleNamespace(
+            native_subagent_failure_notice="helper → Brok · stopped; review needed"
+        )
+        runner, captured = _make_runner_and_captured(
+            monkeypatch, delivery_adapter=adapter
+        )
+        runner._ctx.user_config = {
+            "display": {"suppress_warning_notifications": True}
+        }
+
+        runner.progress_callback(
+            "subagent.complete", preview="boom", status=status, goal="g"
+        )
+
+        assert captured == ["helper → Brok · stopped; review needed"]
+
     @pytest.mark.parametrize("custom_notice", [None, "", "   ", 42])
     def test_invalid_custom_notice_falls_back_to_native_failure_notice(
         self, monkeypatch, custom_notice

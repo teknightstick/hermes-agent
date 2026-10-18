@@ -95,14 +95,15 @@ def test_warning_opt_out_preserves_other_delivery(tmp_path, monkeypatch, platfor
     assert emitter._pending_fallback_notice is None
     emitter._emit_notice(AgentNotice("Credit access paused", level="error", key="credits.depleted"))
     turn.progress_callback("subagent.complete", status="failed", goal="research", summary="provider unavailable")
-    warning_count = len(diagnostics) + 3
-    assert len(adapter.sent) == (warning_count if enabled else 0)
+    diagnostic_count = len(diagnostics) + 2
+    outcome_count = 1
+    assert len(adapter.sent) == (diagnostic_count if enabled else 0) + outcome_count
 
     emitter._emit_status("still on it")
     asyncio.run(gateway._deliver_platform_notice(source, "No home channel is set"))
     for text in ("⚠ The requested analysis", "Approval required", "Compression aborted: manual command result", "The task failed"):
         asyncio.run(adapter.send(source.chat_id, text))
-    assert len(adapter.sent) == (warning_count if enabled else 0) + 6
+    assert len(adapter.sent) == (diagnostic_count if enabled else 0) + outcome_count + 6
     assert all(row[0] == source.chat_id for row in adapter.sent)
 
 
