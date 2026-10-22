@@ -1778,6 +1778,16 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
         # metadata, transcripts, and platform payloads.
         event._gateway_active_turn_session_key = session_key
         event._gateway_active_turn_token = token
+        source = getattr(event, "source", None)
+        platform = getattr(getattr(source, "platform", None), "value", None)
+        chat_id = getattr(source, "chat_id", None)
+        message_id = getattr(event, "message_id", None)
+        if platform and chat_id and message_id:
+            event._gateway_durable_inbound_receipt = {
+                "platform": str(platform),
+                "chat_id": str(chat_id),
+                "message_id": str(message_id),
+            }
         return True
 
     async def _clear_durable_active_turn(self, event: MessageEvent) -> bool:
