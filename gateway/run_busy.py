@@ -857,6 +857,14 @@ class GatewayBusySessionMixin:
         running_agent = _busy_state.turn.agent if _busy_state else None
         _steer = await self._resolve_busy_steer_or_redirect(event, session_key, effective_mode, running_agent)
         effective_mode, redirected = _steer.effective_mode, _steer.redirected
+        if _steer.steered or redirected:
+            # This input was consumed by the running turn rather than queued as
+            # its own turn.  Transfer its durable platform identity to that turn
+            # so the eventual final reply resolves the exact inbound receipt.
+            event._gateway_accepted = True
+            bind_inline = getattr(adapter, "_accept_inline_input_into_active_turn", None)
+            if callable(bind_inline):
+                bind_inline(event, session_key)
         # Queue as the next turn — skipped after a successful steer/redirect (the text is already in
         # the run and must NOT replay). FIFO gives each text its own turn (raw merge would join them).
         if not _steer.steered and not redirected:

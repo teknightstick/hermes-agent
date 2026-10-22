@@ -219,6 +219,8 @@ class TestBusySessionAck:
 
         # VERIFY: No queueing — successful steer must NOT replay as next turn
         mock_merge.assert_not_called()
+        assert event._gateway_accepted is True
+        adapter._accept_inline_input_into_active_turn.assert_called_once_with(event, sk)
 
         # VERIFY: Ack mentions steer wording
         adapter._send_with_retry.assert_called_once()

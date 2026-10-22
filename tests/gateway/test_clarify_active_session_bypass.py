@@ -1,6 +1,7 @@
 """Regression tests for clarify replies while a gateway session is busy."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,6 +78,12 @@ async def test_active_session_routes_typed_choice_clarify_reply_to_runner_not_bu
         thread_sessions_per_user=adapter.config.extra.get("thread_sessions_per_user", False),
     )
     adapter._active_sessions[session_key] = asyncio.Event()
+    opening_event = _event("original request")
+    adapter.gateway_runner = SimpleNamespace(
+        _peek_session_state=lambda key: SimpleNamespace(
+            turn=SimpleNamespace(event=opening_event)
+        ) if key == session_key else None
+    )
     cm.register("clarify-1", session_key, "Pick one", ["A", "B"])
 
     await adapter.handle_message(event)
@@ -84,6 +91,38 @@ async def test_active_session_routes_typed_choice_clarify_reply_to_runner_not_bu
     adapter._message_handler.assert_awaited_once_with(event)
     adapter._busy_session_handler.assert_not_awaited()
     assert adapter._pending_messages == {}
+    assert event._gateway_accepted is True
+    assert opening_event.reply_anchor_override == "msg1"
+    assert opening_event.ledger_message_id == "msg1"
+
+
+@pytest.mark.asyncio
+async def test_final_delivery_passes_stable_obligation_id_to_platform_adapter():
+    adapter = _ClarifyBypassAdapter()
+    adapter._record_delivery_obligation = AsyncMock(return_value="obligation-123")
+    adapter._release_turn_marker = AsyncMock()
+    adapter._send_with_retry = AsyncMock(
+        return_value=SendResult(success=True, message_id="reply-1")
+    )
+    adapter._finalize_delivery_obligation = AsyncMock()
+    event = _event("request")
+    metadata = {"notify": True}
+
+    result, delivery_adapter = await adapter.send_final_ledgered(
+        event,
+        "session-key",
+        "answer",
+        metadata,
+        reply_to="msg1",
+    )
+
+    assert result.success is True
+    assert delivery_adapter is adapter
+    assert metadata == {"notify": True}
+    assert adapter._send_with_retry.await_args.kwargs["metadata"] == {
+        "notify": True,
+        "delivery_key": "obligation-123",
+    }
 
 
 @pytest.mark.asyncio

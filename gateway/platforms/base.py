@@ -3613,6 +3613,38 @@ class BasePlatformAdapter(ABC):
         if eph_ttl > 0 and result.success and result.message_id:
             self._schedule_ephemeral_delete(event.source.chat_id, result.message_id, eph_ttl)
 
+    def _accept_inline_input_into_active_turn(
+        self, event: MessageEvent, session_key: str
+    ) -> None:
+        """Bind consumed inline input to the running turn's final delivery.
+
+        Clarify and busy steer/redirect inputs bypass the normal session task, so
+        without this marker the platform sees a successful inline dispatch as
+        rejected. Re-anchoring the running turn also lets durable delivery use
+        the exact inbound message ID.
+        """
+        event._gateway_accepted = True
+        runner = getattr(self, "gateway_runner", None)
+        peek = getattr(runner, "_peek_session_state", None)
+        if not callable(peek):
+            return
+        try:
+            state = peek(session_key)
+            opening = getattr(getattr(state, "turn", None), "event", None)
+            if opening is None:
+                return
+            anchor = _reply_anchor_for_event(event)
+            inbound_id = str(event.message_id) if event.message_id else None
+            opening.reply_anchor_override = anchor
+            opening.ledger_message_id = inbound_id
+        except Exception:
+            logger.debug(
+                "[%s] Failed to bind clarify reply to active turn %s",
+                self.name,
+                session_key,
+                exc_info=True,
+            )
+
     def _media_delivery_scope(self, source: Optional[SessionSource]):
         """Routed home + terminal policy for post-handler text, media and error delivery;
         a no-op without a runner or outside multiplexing."""
@@ -4117,6 +4149,7 @@ class BasePlatformAdapter(ABC):
                 logger.debug("[%s] Routing message to clarify text-intercept for %s", self.name, session_key)
                 try:
                     await self._dispatch_inline_reply(event)
+                    self._accept_inline_input_into_active_turn(event, session_key)
                 except Exception as e:
                     logger.error("[%s] Clarify text-intercept dispatch failed: %s", self.name, e, exc_info=True)
                 return
@@ -4390,8 +4423,15 @@ class BasePlatformAdapter(ABC):
             event, session_key, text_content, delivery_adapter, is_ephemeral_response)
         if obligation_id is not None:
             await self._release_turn_marker(event)  # the ledger now owns the crash recovery
+        send_metadata = dict(metadata or {})
+        if obligation_id is not None:
+            # The platform adapter must see the same stable key on the initial
+            # send, retries, and startup replay.  The ledger obligation already
+            # owns that identity; do not invent a second content-derived key.
+            send_metadata.setdefault("delivery_key", obligation_id)
         result = await delivery_adapter._send_with_retry(
-            chat_id=event.source.chat_id, content=text_content, reply_to=reply_to, metadata=metadata)
+            chat_id=event.source.chat_id, content=text_content, reply_to=reply_to,
+            metadata=send_metadata)
         stop_reply_clock(delivery_adapter, event.source.chat_id, result)
         if obligation_id is not None:
             await self._finalize_delivery_obligation(obligation_id, result, event, delivery_adapter)
